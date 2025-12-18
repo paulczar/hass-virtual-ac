@@ -1,0 +1,6 @@
+{
+  "name": "Virtual Air Conditioner",
+  "render_readme": true,
+  "domains": ["climate"],
+  "iot_class": "Local Push"
+}

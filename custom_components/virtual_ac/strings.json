@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Virtual Air Conditioner Setup",
+        "description": "Configure your virtual air conditioner for testing.",
+        "data": {
+          "name": "Name",
+          "initial_temp": "Initial Temperature",
+          "initial_humidity": "Initial Humidity (%)",
+          "temp_unit": "Temperature Unit",
+          "min_temp": "Minimum Temperature",
+          "max_temp": "Maximum Temperature",
+          "precision": "Temperature Precision"
+        }
+      },
+      "advanced": {
+        "title": "Advanced Configuration",
+        "description": "Configure simulation parameters.",
+        "data": {
+          "simulation_mode": "Simulation Mode",
+          "cooling_rate": "Cooling Rate (°C/min)",
+          "heating_rate": "Heating Rate (°C/min)",
+          "dry_humidity_rate": "Dry Mode Humidity Rate (%/min)",
+          "ambient_temp": "Ambient Temperature",
+          "ambient_drift_rate": "Ambient Drift Rate (°C/min)",
+          "update_interval": "Update Interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Name is required",
+      "invalid_temp": "Invalid temperature value",
+      "invalid_humidity": "Humidity must be between 0 and 100",
+      "cannot_connect": "Unable to create virtual AC"
+    },
+    "abort": {
+      "already_configured": "Virtual AC is already configured"
+    }
+  }
+}
