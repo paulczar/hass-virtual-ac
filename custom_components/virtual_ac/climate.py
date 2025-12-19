@@ -13,8 +13,9 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, CONF_NAME, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -76,7 +77,6 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
     """Virtual Air Conditioner Climate Entity."""
 
     _attr_has_entity_name = True
-    _attr_name = None
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the Virtual AC climate entity."""
@@ -84,9 +84,19 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         self._entry = entry
         self._config = entry.data
 
-        # Unique ID
-        self._attr_unique_id = entry.entry_id
-        self.entity_id = f"climate.{entry.data.get('name', 'virtual_ac').lower().replace(' ', '_')}"
+        # Device info
+        device_name = entry.data.get(CONF_NAME, "Virtual AC")
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=device_name,
+            manufacturer="Virtual AC",
+            model="Virtual Air Conditioner",
+            sw_version="1.0.0",
+        )
+
+        # Unique ID and entity ID
+        self._attr_unique_id = f"{entry.entry_id}_climate"
+        self.entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
 
         # HVAC modes
         self._attr_hvac_modes = [
