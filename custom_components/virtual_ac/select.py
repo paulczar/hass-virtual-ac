@@ -45,6 +45,7 @@ class VirtualACBaseSelect(SelectEntity):
     """Base class for Virtual AC select entities."""
 
     _attr_has_entity_name = True
+    _attr_name = None
 
     def __init__(
         self,
@@ -57,6 +58,7 @@ class VirtualACBaseSelect(SelectEntity):
         self._device_name = device_name
         self._coordinator = coordinator
         self._climate_entity = None
+        self._climate_entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
 
         # Device info
         self._attr_device_info = DeviceInfo(
@@ -71,9 +73,29 @@ class VirtualACBaseSelect(SelectEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
 
-        # Get initial state
+        # Get initial state and update
+        self._update_state()
+
+        # Listen for climate entity state changes
+        self.async_on_remove(
+            self.hass.helpers.event.async_track_state_change(
+                self._climate_entity_id,
+                self._handle_state_change,
+            )
+        )
+
+    @callback
+    def _update_state(self) -> None:
+        """Update state from climate entity."""
         if state := self.hass.states.get(self._climate_entity_id):
             self._climate_entity = state
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_state_change(self, entity_id: str, old_state, new_state) -> None:
+        """Handle climate entity state changes."""
+        if new_state:
+            self._climate_entity = new_state
             self.async_write_ha_state()
 
 
@@ -81,7 +103,6 @@ class VirtualACFanSelect(VirtualACBaseSelect):
     """Fan speed select entity."""
 
     _attr_options = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
-    _attr_translation_key = "fan_mode"
 
     def __init__(
         self,
@@ -93,12 +114,16 @@ class VirtualACFanSelect(VirtualACBaseSelect):
         super().__init__(entry, device_name, coordinator)
         self._attr_unique_id = f"{entry.entry_id}_fan_mode"
         self.entity_id = f"select.{device_name.lower().replace(' ', '_')}_fan_mode"
+        self._attr_name = "Fan Speed"
 
     @property
     def current_option(self) -> str | None:
         """Return the current fan mode."""
         if self._climate_entity:
             return self._climate_entity.attributes.get("fan_mode")
+        # Try to get from hass state if not cached
+        if self.hass and (state := self.hass.states.get(self._climate_entity_id)):
+            return state.attributes.get("fan_mode")
         return FAN_AUTO
 
     async def async_select_option(self, option: str) -> None:
@@ -113,31 +138,12 @@ class VirtualACFanSelect(VirtualACBaseSelect):
             },
         )
 
-    @callback
-    def _handle_state_change(self, entity_id: str, old_state, new_state) -> None:
-        """Handle climate entity state changes."""
-        if new_state:
-            self._climate_entity = new_state
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Listen for climate entity state changes
-        self.async_on_remove(
-            self.hass.helpers.event.async_track_state_change(
-                self._climate_entity_id,
-                self._handle_state_change,
-            )
-        )
 
 
 class VirtualACSwingSelect(VirtualACBaseSelect):
     """Swing mode select entity."""
 
     _attr_options = [SWING_OFF, SWING_ON]
-    _attr_translation_key = "swing_mode"
 
     def __init__(
         self,
@@ -149,12 +155,16 @@ class VirtualACSwingSelect(VirtualACBaseSelect):
         super().__init__(entry, device_name, coordinator)
         self._attr_unique_id = f"{entry.entry_id}_swing_mode"
         self.entity_id = f"select.{device_name.lower().replace(' ', '_')}_swing_mode"
+        self._attr_name = "Swing Mode"
 
     @property
     def current_option(self) -> str | None:
         """Return the current swing mode."""
         if self._climate_entity:
             return self._climate_entity.attributes.get("swing_mode")
+        # Try to get from hass state if not cached
+        if self.hass and (state := self.hass.states.get(self._climate_entity_id)):
+            return state.attributes.get("swing_mode")
         return SWING_OFF
 
     async def async_select_option(self, option: str) -> None:
@@ -167,23 +177,4 @@ class VirtualACSwingSelect(VirtualACBaseSelect):
                 "entity_id": self._climate_entity_id,
                 "swing_mode": option,
             },
-        )
-
-    @callback
-    def _handle_state_change(self, entity_id: str, old_state, new_state) -> None:
-        """Handle climate entity state changes."""
-        if new_state:
-            self._climate_entity = new_state
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Listen for climate entity state changes
-        self.async_on_remove(
-            self.hass.helpers.event.async_track_state_change(
-                self._climate_entity_id,
-                self._handle_state_change,
-            )
         )

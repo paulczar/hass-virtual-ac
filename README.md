@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="logo.png" alt="Virtual AC Home Assistant Logo" width="400"/>
+</div>
+
 # Virtual Air Conditioner for Home Assistant
 
 A fully-featured virtual air conditioner integration for Home Assistant that simulates a smart AC unit with multiple HVAC modes. Perfect for testing Versatile Thermostat functionality without real hardware constraints.
