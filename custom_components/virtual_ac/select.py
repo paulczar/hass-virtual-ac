@@ -33,12 +33,14 @@ async def async_setup_entry(
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
         coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
 
+    # Create entities
     entities = [
         VirtualACFanSelect(entry, device_name, coordinator),
         VirtualACSwingSelect(entry, device_name, coordinator),
     ]
 
-    async_add_entities(entities)
+    # Add entities to Home Assistant
+    async_add_entities(entities, update_before_add=True)
 
 
 class VirtualACBaseSelect(SelectEntity):
@@ -46,6 +48,7 @@ class VirtualACBaseSelect(SelectEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_available = True
 
     def __init__(
         self,
@@ -76,6 +79,9 @@ class VirtualACBaseSelect(SelectEntity):
         # Get initial state and update
         self._update_state()
 
+        # Write initial state to ensure entity is available
+        self.async_write_ha_state()
+
         # Listen for climate entity state changes
         self.async_on_remove(
             self.hass.helpers.event.async_track_state_change(
@@ -87,9 +93,13 @@ class VirtualACBaseSelect(SelectEntity):
     @callback
     def _update_state(self) -> None:
         """Update state from climate entity."""
-        if state := self.hass.states.get(self._climate_entity_id):
-            self._climate_entity = state
-            self.async_write_ha_state()
+        if self.hass:
+            if state := self.hass.states.get(self._climate_entity_id):
+                self._climate_entity = state
+                self.async_write_ha_state()
+            else:
+                # Climate entity not found yet, but still write state with default
+                self.async_write_ha_state()
 
     @callback
     def _handle_state_change(self, entity_id: str, old_state, new_state) -> None:
@@ -117,17 +127,29 @@ class VirtualACFanSelect(VirtualACBaseSelect):
         self._attr_name = "Fan Speed"
 
     @property
-    def current_option(self) -> str | None:
+    def current_option(self) -> str:
         """Return the current fan mode."""
+        # Try cached state first
         if self._climate_entity:
-            return self._climate_entity.attributes.get("fan_mode")
+            fan_mode = self._climate_entity.attributes.get("fan_mode")
+            if fan_mode in self._attr_options:
+                return fan_mode
+
         # Try to get from hass state if not cached
-        if self.hass and (state := self.hass.states.get(self._climate_entity_id)):
-            return state.attributes.get("fan_mode")
+        if self.hass:
+            if state := self.hass.states.get(self._climate_entity_id):
+                fan_mode = state.attributes.get("fan_mode")
+                if fan_mode in self._attr_options:
+                    return fan_mode
+
+        # Default fallback
         return FAN_AUTO
 
     async def async_select_option(self, option: str) -> None:
         """Change the fan mode."""
+        if option not in self._attr_options:
+            raise ValueError(f"Invalid option: {option}")
+
         # Call the climate entity's service
         await self.hass.services.async_call(
             "climate",
@@ -137,6 +159,9 @@ class VirtualACFanSelect(VirtualACBaseSelect):
                 "fan_mode": option,
             },
         )
+
+        # Update our state immediately
+        self._update_state()
 
 
 
@@ -158,17 +183,29 @@ class VirtualACSwingSelect(VirtualACBaseSelect):
         self._attr_name = "Swing Mode"
 
     @property
-    def current_option(self) -> str | None:
+    def current_option(self) -> str:
         """Return the current swing mode."""
+        # Try cached state first
         if self._climate_entity:
-            return self._climate_entity.attributes.get("swing_mode")
+            swing_mode = self._climate_entity.attributes.get("swing_mode")
+            if swing_mode in self._attr_options:
+                return swing_mode
+
         # Try to get from hass state if not cached
-        if self.hass and (state := self.hass.states.get(self._climate_entity_id)):
-            return state.attributes.get("swing_mode")
+        if self.hass:
+            if state := self.hass.states.get(self._climate_entity_id):
+                swing_mode = state.attributes.get("swing_mode")
+                if swing_mode in self._attr_options:
+                    return swing_mode
+
+        # Default fallback
         return SWING_OFF
 
     async def async_select_option(self, option: str) -> None:
         """Change the swing mode."""
+        if option not in self._attr_options:
+            raise ValueError(f"Invalid option: {option}")
+
         # Call the climate entity's service
         await self.hass.services.async_call(
             "climate",
@@ -178,3 +215,6 @@ class VirtualACSwingSelect(VirtualACBaseSelect):
                 "swing_mode": option,
             },
         )
+
+        # Update our state immediately
+        self._update_state()
