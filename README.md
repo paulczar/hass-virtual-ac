@@ -195,6 +195,56 @@ This gives you 4x faster temperature changes and 5x faster humidity changes whil
 - Test in realistic mode (more realistic behavior)
 - Verify both work correctly
 
+## Services
+
+### `virtual_ac.set_state`
+
+Set current temperature and/or humidity values for testing scenarios. This is useful when you want to set specific starting conditions before testing a simulation.
+
+**Service Data:**
+- `entity_id` (required): The entity ID of the Virtual AC climate entity or any associated sensor/select entity
+- `current_temperature` (optional): Set the current indoor temperature
+- `current_humidity` (optional): Set the current indoor humidity percentage
+- `external_temperature` (optional): Set the external/ambient temperature
+- `external_humidity` (optional): Set the external/ambient humidity percentage
+
+**Examples:**
+
+Set current temperature to 25°C:
+```yaml
+service: virtual_ac.set_state
+target:
+  entity_id: climate.test_ac
+data:
+  current_temperature: 25.0
+```
+
+Set both temperature and humidity for a high humidity test scenario:
+```yaml
+service: virtual_ac.set_state
+target:
+  entity_id: climate.test_ac
+data:
+  current_temperature: 22.0
+  current_humidity: 75.0
+```
+
+Set external conditions:
+```yaml
+service: virtual_ac.set_state
+target:
+  entity_id: climate.test_ac
+data:
+  external_temperature: 30.0
+  external_humidity: 80.0
+```
+
+**Usage Tips:**
+- You can use any entity ID from the device (climate, sensor, or select entity)
+- Values are updated immediately and will persist until changed by simulation or another service call
+- Useful for setting up test scenarios before starting realistic mode simulation
+- Can be called from automations, scripts, or the Developer Tools → Services
+
 ## State Attributes
 
 The integration exposes the following state attributes:

@@ -72,7 +72,15 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Virtual AC climate platform."""
-    async_add_entities([VirtualACClimate(hass, entry)])
+    climate_entity = VirtualACClimate(hass, entry)
+    async_add_entities([climate_entity])
+    
+    # Store reference to climate entity for service access
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+    if entry.entry_id not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][entry.entry_id] = {}
+    hass.data[DOMAIN][entry.entry_id]["climate_entity"] = climate_entity
 
 
 class VirtualACClimate(ClimateEntity, RestoreEntity):
@@ -276,6 +284,36 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         if self._coordinator:
             self._coordinator.update_temperature(self._attr_current_temperature)
             self._coordinator.update_humidity(self._attr_current_humidity)
+
+        self.async_write_ha_state()
+
+    async def async_set_current_state(
+        self,
+        current_temperature: float | None = None,
+        current_humidity: float | None = None,
+        external_temperature: float | None = None,
+        external_humidity: float | None = None,
+    ) -> None:
+        """Set current temperature and/or humidity for testing."""
+        if current_temperature is not None:
+            self._attr_current_temperature = current_temperature
+            if self._coordinator:
+                self._coordinator.update_temperature(current_temperature)
+
+        if current_humidity is not None:
+            self._attr_current_humidity = current_humidity
+            if self._coordinator:
+                self._coordinator.update_humidity(current_humidity)
+
+        if external_temperature is not None:
+            self._ambient_temp = external_temperature
+            if self._coordinator:
+                self._coordinator.update_external_temperature(external_temperature)
+
+        if external_humidity is not None:
+            self._ambient_humidity = external_humidity
+            if self._coordinator:
+                self._coordinator.update_external_humidity(external_humidity)
 
         self.async_write_ha_state()
 
