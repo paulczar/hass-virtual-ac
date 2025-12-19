@@ -74,7 +74,7 @@ async def async_setup_entry(
     """Set up Virtual AC climate platform."""
     climate_entity = VirtualACClimate(hass, entry)
     async_add_entities([climate_entity])
-    
+
     # Store reference to climate entity for service access
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
@@ -109,9 +109,10 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             sw_version="1.0.0",
         )
 
-        # Unique ID and entity ID
+        # Unique ID
         self._attr_unique_id = f"{entry.entry_id}_climate"
-        self.entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
+        # Store desired entity_id - will be set via entity registry in async_added_to_hass
+        self._desired_entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
 
         # HVAC modes
         self._attr_hvac_modes = [
@@ -145,6 +146,7 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         self._attr_current_humidity = self._config.get(CONF_INITIAL_HUMIDITY, DEFAULT_INITIAL_HUMIDITY)
         self._attr_target_temperature = self._attr_current_temperature
         self._attr_hvac_mode = HVACMode.OFF
+        self._attr_available = True
 
         # Initialize coordinator with initial values
         if self._coordinator:
@@ -187,6 +189,26 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
 
+        # Set custom entity_id via entity registry if it differs
+        # Do this after super() so the entity is registered first
+        if hasattr(self, "_desired_entity_id"):
+            entity_registry = self.hass.helpers.entity_registry.async_get(self.hass)
+            # Get the current registry entry (might have different entity_id)
+            registry_entry = entity_registry.async_get(self.entity_id)
+            if registry_entry and registry_entry.entity_id != self._desired_entity_id:
+                try:
+                    # Update entity_id in registry to desired value
+                    entity_registry.async_update_entity(
+                        self.entity_id,
+                        new_entity_id=self._desired_entity_id,
+                    )
+                    # Update our internal reference
+                    self.entity_id = self._desired_entity_id
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Could not update entity_id to %s: %s", self._desired_entity_id, e
+                    )
+
         # Get coordinator if not already set (fallback)
         if self._coordinator is None and DOMAIN in self.hass.data:
             if self._entry.entry_id in self.hass.data[DOMAIN]:
@@ -224,6 +246,9 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         # Start simulation if in realistic mode
         if self._simulation_mode == SIMULATION_MODE_REALISTIC:
             self._start_simulation()
+
+        # Write initial state to ensure entity is available
+        self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
