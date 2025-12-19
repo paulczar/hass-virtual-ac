@@ -200,6 +200,19 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             self._coordinator.update_external_temperature(self._ambient_temp)
             self._coordinator.update_external_humidity(self._ambient_humidity)
 
+        # Log initialization
+        _LOGGER.debug(
+            "Virtual AC initialized: name=%s, mode=%s, simulation_mode=%s, current_temp=%.2f°C, target_temp=%.2f°C, heating_rate=%.2f°C/min, cooling_rate=%.2f°C/min, update_interval=%ds",
+            device_name,
+            self._attr_hvac_mode,
+            self._simulation_mode,
+            self._attr_current_temperature,
+            self._attr_target_temperature,
+            self._heating_rate,
+            self._cooling_rate,
+            self._update_interval,
+        )
+
         # Start simulation if in realistic mode
         if self._simulation_mode == SIMULATION_MODE_REALISTIC:
             self._start_simulation()
@@ -211,15 +224,25 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
+        old_mode = self._attr_hvac_mode
         self._attr_hvac_mode = hvac_mode
         self._last_mode_change = datetime.now()
+
+        _LOGGER.debug(
+            "HVAC mode changed: %s -> %s (simulation_mode: %s, current_temp: %.2f°C, target_temp: %.2f°C)",
+            old_mode,
+            hvac_mode,
+            self._simulation_mode,
+            self._attr_current_temperature,
+            self._attr_target_temperature,
+        )
 
         if self._simulation_mode == SIMULATION_MODE_INSTANT:
             # Instant mode: update immediately
             await self._apply_instant_mode(hvac_mode)
         else:
-            # Realistic mode: start simulation if not running
-            if self._simulation_task is None:
+            # Realistic mode: start simulation if not running or if task is done
+            if self._simulation_task is None or self._simulation_task.done():
                 self._start_simulation()
 
         # Update coordinator (apply_instant_mode already does this, but ensure it's done)
@@ -232,12 +255,22 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
+            old_target = self._attr_target_temperature
             self._attr_target_temperature = temperature
 
+            _LOGGER.debug(
+                "Target temperature changed: %.2f -> %.2f°C (current: %.2f°C, mode: %s, simulation_mode: %s)",
+                old_target,
+                temperature,
+                self._attr_current_temperature,
+                self._attr_hvac_mode,
+                self._simulation_mode,
+            )
+
             if self._simulation_mode == SIMULATION_MODE_INSTANT:
-                # In instant mode, if we're in AUTO mode, update immediately
-                if self._attr_hvac_mode == HVACMode.AUTO:
-                    await self._apply_instant_mode(HVACMode.AUTO)
+                # In instant mode, update immediately for all active modes
+                if self._attr_hvac_mode != HVACMode.OFF:
+                    await self._apply_instant_mode(self._attr_hvac_mode)
 
         # Update coordinator
         if self._coordinator:
@@ -323,39 +356,58 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
     def _start_simulation(self) -> None:
         """Start the simulation task."""
         if self._simulation_task is None or self._simulation_task.done():
+            _LOGGER.debug(
+                "Starting simulation loop: mode=%s, update_interval=%ds, heating_rate=%.2f°C/min, cooling_rate=%.2f°C/min",
+                self._attr_hvac_mode,
+                self._update_interval,
+                self._heating_rate,
+                self._cooling_rate,
+            )
             self._simulation_task = self.hass.async_create_task(self._simulation_loop())
             self._last_update = datetime.now()
 
     def _stop_simulation(self) -> None:
         """Stop the simulation task."""
         if self._simulation_task is not None and not self._simulation_task.done():
+            _LOGGER.debug("Stopping simulation loop")
             self._simulation_task.cancel()
             self._simulation_task = None
 
     async def _simulation_loop(self) -> None:
         """Background task for realistic simulation."""
+        # Ensure _last_update is set before first iteration
+        if self._last_update is None:
+            self._last_update = datetime.now()
+            _LOGGER.debug("Simulation loop initialized, starting updates")
+
         while True:
             try:
                 await asyncio.sleep(self._update_interval)
                 await self._update_simulation()
             except asyncio.CancelledError:
+                _LOGGER.debug("Simulation loop cancelled")
                 break
             except Exception as e:
-                _LOGGER.error("Error in Virtual AC simulation loop: %s", e)
+                _LOGGER.error("Error in Virtual AC simulation loop: %s", e, exc_info=True)
                 break
 
     async def _update_simulation(self) -> None:
         """Update temperature and humidity based on current mode."""
-        if self._last_update is None:
-            self._last_update = datetime.now()
-            return
-
         now = datetime.now()
-        elapsed_minutes = (now - self._last_update).total_seconds() / 60.0
+
+        # Calculate elapsed time since last update
+        if self._last_update is None:
+            elapsed_minutes = self._update_interval / 60.0  # Use update interval as initial elapsed time
+        else:
+            elapsed_minutes = (now - self._last_update).total_seconds() / 60.0
+
         self._last_update = now
 
         # Get fan speed multiplier
         fan_multiplier = self._get_fan_multiplier()
+
+        old_temp = self._attr_current_temperature
+        old_humidity = self._attr_current_humidity
 
         # Update based on HVAC mode
         if self._attr_hvac_mode == HVACMode.COOL:
@@ -371,6 +423,20 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             await self._simulate_auto(elapsed_minutes, fan_multiplier)
         elif self._attr_hvac_mode == HVACMode.OFF:
             await self._simulate_off(elapsed_minutes)
+
+        # Log update summary if values changed
+        if abs(self._attr_current_temperature - old_temp) > 0.001 or abs(self._attr_current_humidity - old_humidity) > 0.1:
+            _LOGGER.debug(
+                "Update cycle [%s]: temp %.2f->%.2f°C (target: %.2f°C), humidity %.1f->%.1f%%, elapsed: %.2f min, fan_mult: %.1f",
+                self._attr_hvac_mode,
+                old_temp,
+                self._attr_current_temperature,
+                self._attr_target_temperature,
+                old_humidity,
+                self._attr_current_humidity,
+                elapsed_minutes,
+                fan_multiplier,
+            )
 
         # Ensure values stay within bounds
         self._attr_current_temperature = max(
@@ -401,23 +467,57 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         """Simulate cooling mode."""
         if self._attr_current_temperature > self._attr_target_temperature:
             change = self._cooling_rate * elapsed_minutes * fan_multiplier
-            self._attr_current_temperature = max(
+            new_temp = max(
                 self._attr_target_temperature,
                 self._attr_current_temperature - change,
             )
+            _LOGGER.debug(
+                "Cooling: %.2f -> %.2f°C (target: %.2f°C, change: %.4f°C, rate: %.2f°C/min, elapsed: %.2f min, fan: %.1f)",
+                self._attr_current_temperature,
+                new_temp,
+                self._attr_target_temperature,
+                change,
+                self._cooling_rate,
+                elapsed_minutes,
+                fan_multiplier,
+            )
+            self._attr_current_temperature = new_temp
             # Slight humidity decrease due to condensation
             self._attr_current_humidity = max(0, self._attr_current_humidity - 0.5 * elapsed_minutes)
+        else:
+            _LOGGER.debug(
+                "Cooling: Already at/below target (%.2f°C <= %.2f°C), no change",
+                self._attr_current_temperature,
+                self._attr_target_temperature,
+            )
 
     async def _simulate_heating(self, elapsed_minutes: float, fan_multiplier: float) -> None:
         """Simulate heating mode."""
         if self._attr_current_temperature < self._attr_target_temperature:
             change = self._heating_rate * elapsed_minutes * fan_multiplier
-            self._attr_current_temperature = min(
+            new_temp = min(
                 self._attr_target_temperature,
                 self._attr_current_temperature + change,
             )
+            _LOGGER.debug(
+                "Heating: %.2f -> %.2f°C (target: %.2f°C, change: %.4f°C, rate: %.2f°C/min, elapsed: %.2f min, fan: %.1f)",
+                self._attr_current_temperature,
+                new_temp,
+                self._attr_target_temperature,
+                change,
+                self._heating_rate,
+                elapsed_minutes,
+                fan_multiplier,
+            )
+            self._attr_current_temperature = new_temp
             # Slight humidity decrease
             self._attr_current_humidity = max(0, self._attr_current_humidity - 0.3 * elapsed_minutes)
+        else:
+            _LOGGER.debug(
+                "Heating: Already at/above target (%.2f°C >= %.2f°C), no change",
+                self._attr_current_temperature,
+                self._attr_target_temperature,
+            )
 
     async def _simulate_dry(self, elapsed_minutes: float, fan_multiplier: float) -> None:
         """Simulate dry mode."""
@@ -441,27 +541,54 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
 
         if temp_diff > tolerance:
             # Need to cool
+            _LOGGER.debug("Auto mode: Cooling needed (diff: +%.2f°C)", temp_diff)
             await self._simulate_cooling(elapsed_minutes, fan_multiplier)
         elif temp_diff < -tolerance:
             # Need to heat
+            _LOGGER.debug("Auto mode: Heating needed (diff: %.2f°C)", temp_diff)
             await self._simulate_heating(elapsed_minutes, fan_multiplier)
-        # Otherwise, maintain current temperature
+        else:
+            # Otherwise, maintain current temperature
+            _LOGGER.debug("Auto mode: Within tolerance (diff: %.2f°C), maintaining", temp_diff)
 
     async def _simulate_off(self, elapsed_minutes: float) -> None:
         """Simulate off mode - drift toward ambient."""
         if self._attr_current_temperature < self._ambient_temp:
             # Drift up toward ambient
             change = self._ambient_drift_rate * elapsed_minutes
-            self._attr_current_temperature = min(
+            new_temp = min(
                 self._ambient_temp,
                 self._attr_current_temperature + change,
             )
+            _LOGGER.debug(
+                "OFF mode: Drifting up %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
+                self._attr_current_temperature,
+                new_temp,
+                self._ambient_temp,
+                change,
+                self._ambient_drift_rate,
+            )
+            self._attr_current_temperature = new_temp
         elif self._attr_current_temperature > self._ambient_temp:
             # Drift down toward ambient
             change = self._ambient_drift_rate * elapsed_minutes
-            self._attr_current_temperature = max(
+            new_temp = max(
                 self._ambient_temp,
                 self._attr_current_temperature - change,
+            )
+            _LOGGER.debug(
+                "OFF mode: Drifting down %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
+                self._attr_current_temperature,
+                new_temp,
+                self._ambient_temp,
+                change,
+                self._ambient_drift_rate,
+            )
+            self._attr_current_temperature = new_temp
+        else:
+            _LOGGER.debug(
+                "OFF mode: At ambient temperature (%.2f°C), no drift",
+                self._attr_current_temperature,
             )
 
     @property

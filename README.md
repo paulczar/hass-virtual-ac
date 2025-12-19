@@ -50,7 +50,7 @@ When adding the integration, you'll be prompted for:
 - **Temperature Unit**: Celsius or Fahrenheit (default: Celsius)
 - **Minimum Temperature**: Minimum allowed temperature (default: 16.0°C)
 - **Maximum Temperature**: Maximum allowed temperature (default: 30.0°C)
-- **Temperature Precision**: Temperature precision (default: 0.1°C)
+- **Temperature Precision**: Temperature precision (default: 0.5°C)
 
 ### Advanced Configuration
 
@@ -63,6 +63,44 @@ When adding the integration, you'll be prompted for:
 - **Ambient Temperature**: Target temperature when OFF (default: 20.0°C)
 - **Ambient Drift Rate**: Temperature drift rate when OFF (°C per minute, default: 0.1)
 - **Update Interval**: Simulation update interval in seconds (default: 10)
+
+### Adjusting Simulation Speed
+
+You can customize the simulation speed by adjusting the rates in realistic mode. This allows you to speed up or slow down the simulation without needing a separate "fast" mode.
+
+**Default Rates:**
+- Cooling: 0.5°C per minute (1°C drop = 2 minutes)
+- Heating: 0.5°C per minute (1°C rise = 2 minutes)
+- Dry humidity: 2.0% per minute (1% drop = 30 seconds)
+
+**Faster Simulation Examples:**
+- **2x faster**: Set cooling/heating rate to `1.0` (1°C change = 1 minute)
+- **5x faster**: Set cooling/heating rate to `2.5` (1°C change = 24 seconds)
+- **10x faster**: Set cooling/heating rate to `5.0` (1°C change = 12 seconds)
+- **Dry mode faster**: Set dry humidity rate to `10.0` (1% drop = 6 seconds)
+
+**Slower Simulation Examples:**
+- **2x slower**: Set cooling/heating rate to `0.25` (1°C change = 4 minutes)
+- **5x slower**: Set cooling/heating rate to `0.1` (1°C change = 10 minutes)
+
+**Fan Speed Multipliers:**
+- **LOW**: 50% of base rate (slower)
+- **MEDIUM/AUTO**: 100% of base rate (normal)
+- **HIGH**: 150% of base rate (faster)
+
+**Update Interval:**
+- Smaller values (e.g., `5` seconds) = more frequent updates, smoother simulation
+- Larger values (e.g., `30` seconds) = less frequent updates, less CPU usage
+
+**Example: Fast Testing Setup**
+```
+Simulation Mode: realistic
+Cooling Rate: 2.0 (°C/min)
+Heating Rate: 2.0 (°C/min)
+Dry Humidity Rate: 10.0 (%/min)
+Update Interval: 5 (seconds)
+```
+This gives you 4x faster temperature changes and 5x faster humidity changes while still maintaining observable intermediate states.
 
 ## HVAC Modes
 
@@ -182,6 +220,66 @@ The integration exposes the following state attributes:
 6. **Cost Effective**: No energy costs for testing
 7. **Reproducible**: Same conditions every time
 
+## Debug Logging
+
+The integration includes comprehensive debug logging to help troubleshoot simulation behavior. To enable debug logging:
+
+### Enable Debug Logging
+
+1. **Via Configuration File** (recommended):
+   Add the following to your `configuration.yaml`:
+   ```yaml
+   logger:
+     default: info
+     logs:
+       custom_components.virtual_ac: debug
+   ```
+
+2. **Via Developer Tools**:
+   - Go to **Settings** → **Developer Tools** → **YAML**
+   - Add the logger configuration above
+   - Click **Restart** to apply changes
+
+3. **Via UI** (Home Assistant 2023.3+):
+   - Go to **Settings** → **System** → **Logs**
+   - Click the three dots menu → **Download Full Logs**
+   - Or use the logger integration UI if available
+
+### What Gets Logged
+
+When debug logging is enabled, you'll see detailed information about:
+
+- **Initialization**: Entity setup with all configuration values
+- **Simulation Loop**: Start/stop events and update cycles
+- **Mode Changes**: HVAC mode transitions with before/after states
+- **Temperature Changes**: Target temperature updates
+- **Heating/Cooling**: Detailed temperature changes including:
+  - Current and new temperature values
+  - Target temperature
+  - Change amount and rate
+  - Elapsed time since last update
+  - Fan speed multiplier
+- **Auto Mode**: Decision logic (heating vs cooling needed)
+- **OFF Mode**: Ambient temperature drift behavior
+- **Update Cycles**: Summary of each simulation update cycle
+
+### Example Log Output
+
+```
+DEBUG custom_components.virtual_ac.climate - Virtual AC initialized: name=Test AC, mode=off, simulation_mode=realistic, current_temp=22.00°C, target_temp=22.00°C, heating_rate=0.50°C/min, cooling_rate=0.50°C/min, update_interval=10s
+DEBUG custom_components.virtual_ac.climate - Starting simulation loop: mode=heat, update_interval=10s, heating_rate=0.50°C/min, cooling_rate=0.50°C/min
+DEBUG custom_components.virtual_ac.climate - HVAC mode changed: off -> heat (simulation_mode: realistic, current_temp: 22.00°C, target_temp: 36.00°C)
+DEBUG custom_components.virtual_ac.climate - Target temperature changed: 22.00 -> 36.00°C (current: 22.00°C, mode: heat, simulation_mode: realistic)
+DEBUG custom_components.virtual_ac.climate - Heating: 22.00 -> 22.08°C (target: 36.00°C, change: 0.0833°C, rate: 0.50°C/min, elapsed: 0.17 min, fan: 1.0)
+DEBUG custom_components.virtual_ac.climate - Update cycle [heat]: temp 22.00->22.08°C (target: 36.00°C), humidity 50.0->49.9%, elapsed: 0.17 min, fan_mult: 1.0
+```
+
+### Viewing Logs
+
+- **Via UI**: Settings → System → Logs
+- **Via Terminal**: `tail -f ~/.homeassistant/home-assistant.log` (or your log location)
+- **Via SSH Add-on**: Use the SSH add-on terminal
+
 ## Troubleshooting
 
 ### Entity not appearing
@@ -193,6 +291,9 @@ The integration exposes the following state attributes:
 - Check simulation mode (instant vs realistic)
 - In realistic mode, wait for update interval
 - Verify HVAC mode is not OFF
+- **Enable debug logging** to see detailed simulation progress
+- Check logs for simulation loop errors
+- **Too slow?** Adjust rates in advanced settings (see "Adjusting Simulation Speed" section)
 
 ### Humidity not changing
 - DRY mode has the most significant humidity change
