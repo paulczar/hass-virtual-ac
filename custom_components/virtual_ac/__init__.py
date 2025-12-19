@@ -7,8 +7,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .coordinator import VirtualACCoordinator
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE]
+PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR, Platform.SELECT]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -16,7 +17,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
 
-    # Forward the setup to the climate platform
+    # Create coordinator for sharing state between climate and sensors
+    coordinator = VirtualACCoordinator(entry)
+    hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
+
+    # Forward the setup to the platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True

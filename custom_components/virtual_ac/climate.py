@@ -32,6 +32,7 @@ from .const import (
     CONF_HEATING_RATE,
     CONF_DRY_HUMIDITY_RATE,
     CONF_AMBIENT_TEMP,
+    CONF_AMBIENT_HUMIDITY,
     CONF_AMBIENT_DRIFT_RATE,
     CONF_UPDATE_INTERVAL,
     DEFAULT_INITIAL_TEMP,
@@ -45,6 +46,7 @@ from .const import (
     DEFAULT_HEATING_RATE,
     DEFAULT_DRY_HUMIDITY_RATE,
     DEFAULT_AMBIENT_TEMP,
+    DEFAULT_AMBIENT_HUMIDITY,
     DEFAULT_AMBIENT_DRIFT_RATE,
     DEFAULT_UPDATE_INTERVAL,
     SIMULATION_MODE_INSTANT,
@@ -83,6 +85,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         self.hass = hass
         self._entry = entry
         self._config = entry.data
+
+        # Get coordinator for sharing state with sensors
+        self._coordinator = None
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            self._coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
 
         # Device info
         device_name = entry.data.get(CONF_NAME, "Virtual AC")
@@ -131,6 +138,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         self._attr_target_temperature = self._attr_current_temperature
         self._attr_hvac_mode = HVACMode.OFF
 
+        # Initialize coordinator with initial values
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
+
         # Preset modes
         self._attr_preset_modes = [PRESET_ECO, PRESET_COMFORT, PRESET_SLEEP, PRESET_AWAY]
         self._attr_preset_mode = PRESET_COMFORT
@@ -149,8 +161,14 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         self._heating_rate = self._config.get(CONF_HEATING_RATE, DEFAULT_HEATING_RATE)
         self._dry_humidity_rate = self._config.get(CONF_DRY_HUMIDITY_RATE, DEFAULT_DRY_HUMIDITY_RATE)
         self._ambient_temp = self._config.get(CONF_AMBIENT_TEMP, DEFAULT_AMBIENT_TEMP)
+        self._ambient_humidity = self._config.get(CONF_AMBIENT_HUMIDITY, DEFAULT_AMBIENT_HUMIDITY)
         self._ambient_drift_rate = self._config.get(CONF_AMBIENT_DRIFT_RATE, DEFAULT_AMBIENT_DRIFT_RATE)
         self._update_interval = self._config.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+
+        # Initialize external values in coordinator (after ambient values are loaded)
+        if self._coordinator:
+            self._coordinator.update_external_temperature(self._ambient_temp)
+            self._coordinator.update_external_humidity(self._ambient_humidity)
 
         # Simulation state
         self._simulation_task: asyncio.Task | None = None
@@ -161,6 +179,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
 
+        # Get coordinator if not already set (fallback)
+        if self._coordinator is None and DOMAIN in self.hass.data:
+            if self._entry.entry_id in self.hass.data[DOMAIN]:
+                self._coordinator = self.hass.data[DOMAIN][self._entry.entry_id].get("coordinator")
+
         # Restore state if available
         if (last_state := await self.async_get_last_state()) is not None:
             if last_state.attributes.get("temperature") is not None:
@@ -169,6 +192,13 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
                 self._attr_current_humidity = float(last_state.attributes["humidity"])
             if last_state.attributes.get("target_temp_low") is not None:
                 self._attr_target_temperature = float(last_state.attributes["target_temp_low"])
+
+        # Update coordinator with current values
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
+            self._coordinator.update_external_temperature(self._ambient_temp)
+            self._coordinator.update_external_humidity(self._ambient_humidity)
 
         # Start simulation if in realistic mode
         if self._simulation_mode == SIMULATION_MODE_REALISTIC:
@@ -192,6 +222,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             if self._simulation_task is None:
                 self._start_simulation()
 
+        # Update coordinator (apply_instant_mode already does this, but ensure it's done)
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
+
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -203,6 +238,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
                 # In instant mode, if we're in AUTO mode, update immediately
                 if self._attr_hvac_mode == HVACMode.AUTO:
                     await self._apply_instant_mode(HVACMode.AUTO)
+
+        # Update coordinator
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
 
         self.async_write_ha_state()
 
@@ -275,6 +315,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             # Temperature drifts toward ambient
             pass
 
+        # Update coordinator
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
+
     def _start_simulation(self) -> None:
         """Start the simulation task."""
         if self._simulation_task is None or self._simulation_task.done():
@@ -333,6 +378,11 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             min(self._attr_max_temp, self._attr_current_temperature),
         )
         self._attr_current_humidity = max(0, min(100, self._attr_current_humidity))
+
+        # Update coordinator
+        if self._coordinator:
+            self._coordinator.update_temperature(self._attr_current_temperature)
+            self._coordinator.update_humidity(self._attr_current_humidity)
 
         self.async_write_ha_state()
 

@@ -22,6 +22,7 @@ from .const import (
     CONF_HEATING_RATE,
     CONF_DRY_HUMIDITY_RATE,
     CONF_AMBIENT_TEMP,
+    CONF_AMBIENT_HUMIDITY,
     CONF_AMBIENT_DRIFT_RATE,
     CONF_UPDATE_INTERVAL,
     DEFAULT_INITIAL_TEMP,
@@ -35,6 +36,7 @@ from .const import (
     DEFAULT_HEATING_RATE,
     DEFAULT_DRY_HUMIDITY_RATE,
     DEFAULT_AMBIENT_TEMP,
+    DEFAULT_AMBIENT_HUMIDITY,
     DEFAULT_AMBIENT_DRIFT_RATE,
     DEFAULT_UPDATE_INTERVAL,
     SIMULATION_MODE_INSTANT,
@@ -47,6 +49,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_NAME): str,
         vol.Optional(CONF_INITIAL_TEMP, default=DEFAULT_INITIAL_TEMP): vol.Coerce(float),
         vol.Optional(CONF_INITIAL_HUMIDITY, default=DEFAULT_INITIAL_HUMIDITY): vol.Coerce(float),
+        vol.Optional(CONF_AMBIENT_TEMP, default=DEFAULT_AMBIENT_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_AMBIENT_HUMIDITY, default=DEFAULT_AMBIENT_HUMIDITY): vol.Coerce(float),
         vol.Optional(CONF_TEMP_UNIT, default=DEFAULT_TEMP_UNIT): vol.In(["celsius", "fahrenheit"]),
         vol.Optional(CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP): vol.Coerce(float),
         vol.Optional(CONF_MAX_TEMP, default=DEFAULT_MAX_TEMP): vol.Coerce(float),
@@ -62,7 +66,6 @@ STEP_ADVANCED_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_COOLING_RATE, default=DEFAULT_COOLING_RATE): vol.Coerce(float),
         vol.Optional(CONF_HEATING_RATE, default=DEFAULT_HEATING_RATE): vol.Coerce(float),
         vol.Optional(CONF_DRY_HUMIDITY_RATE, default=DEFAULT_DRY_HUMIDITY_RATE): vol.Coerce(float),
-        vol.Optional(CONF_AMBIENT_TEMP, default=DEFAULT_AMBIENT_TEMP): vol.Coerce(float),
         vol.Optional(CONF_AMBIENT_DRIFT_RATE, default=DEFAULT_AMBIENT_DRIFT_RATE): vol.Coerce(float),
         vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL): vol.Coerce(int),
     }
@@ -90,6 +93,8 @@ class VirtualACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_NAME] = "invalid_name"
             elif not 0 <= user_input.get(CONF_INITIAL_HUMIDITY, 0) <= 100:
                 errors[CONF_INITIAL_HUMIDITY] = "invalid_humidity"
+            elif not 0 <= user_input.get(CONF_AMBIENT_HUMIDITY, 0) <= 100:
+                errors[CONF_AMBIENT_HUMIDITY] = "invalid_humidity"
             elif user_input.get(CONF_MIN_TEMP, 0) >= user_input.get(CONF_MAX_TEMP, 100):
                 errors["base"] = "invalid_temp"
             else:
@@ -170,12 +175,6 @@ class VirtualACOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_DRY_HUMIDITY_RATE,
                     default=self.config_entry.data.get(
                         CONF_DRY_HUMIDITY_RATE, DEFAULT_DRY_HUMIDITY_RATE
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_AMBIENT_TEMP,
-                    default=self.config_entry.data.get(
-                        CONF_AMBIENT_TEMP, DEFAULT_AMBIENT_TEMP
                     ),
                 ): vol.Coerce(float),
                 vol.Optional(

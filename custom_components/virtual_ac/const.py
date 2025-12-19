@@ -14,6 +14,7 @@ CONF_COOLING_RATE = "cooling_rate"
 CONF_HEATING_RATE = "heating_rate"
 CONF_DRY_HUMIDITY_RATE = "dry_humidity_rate"
 CONF_AMBIENT_TEMP = "ambient_temp"
+CONF_AMBIENT_HUMIDITY = "ambient_humidity"
 CONF_AMBIENT_DRIFT_RATE = "ambient_drift_rate"
 CONF_UPDATE_INTERVAL = "update_interval"
 
@@ -29,6 +30,7 @@ DEFAULT_COOLING_RATE = 0.5  # °C per minute
 DEFAULT_HEATING_RATE = 0.5  # °C per minute
 DEFAULT_DRY_HUMIDITY_RATE = 2.0  # % per minute
 DEFAULT_AMBIENT_TEMP = 20.0
+DEFAULT_AMBIENT_HUMIDITY = 60.0
 DEFAULT_AMBIENT_DRIFT_RATE = 0.1  # °C per minute when OFF
 DEFAULT_UPDATE_INTERVAL = 10  # seconds
 

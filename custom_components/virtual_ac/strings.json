@@ -6,8 +6,10 @@
         "description": "Configure your virtual air conditioner for testing.",
         "data": {
           "name": "Name",
-          "initial_temp": "Initial Temperature",
-          "initial_humidity": "Initial Humidity (%)",
+          "initial_temp": "Indoor Temperature (starting)",
+          "initial_humidity": "Indoor Humidity (%) (starting)",
+          "ambient_temp": "Outdoor Temperature (starting)",
+          "ambient_humidity": "Outdoor Humidity (%) (starting)",
           "temp_unit": "Temperature Unit",
           "min_temp": "Minimum Temperature",
           "max_temp": "Maximum Temperature",
@@ -22,7 +24,6 @@
           "cooling_rate": "Cooling Rate (°C/min)",
           "heating_rate": "Heating Rate (°C/min)",
           "dry_humidity_rate": "Dry Mode Humidity Rate (%/min)",
-          "ambient_temp": "Ambient Temperature",
           "ambient_drift_rate": "Ambient Drift Rate (°C/min)",
           "update_interval": "Update Interval (seconds)"
         }
