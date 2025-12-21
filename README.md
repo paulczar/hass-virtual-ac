@@ -245,6 +245,54 @@ data:
 - Useful for setting up test scenarios before starting realistic mode simulation
 - Can be called from automations, scripts, or the Developer Tools → Services
 
+### `virtual_ac.sync_from_entities`
+
+Sync temperature and humidity from another climate entity and/or weather entity. This allows you to match your Virtual AC's conditions to real-world conditions for more accurate simulation.
+
+**Service Data:**
+- `entity_id` (required): The entity ID of the Virtual AC climate entity or any associated sensor/select entity
+- `climate_entity` (optional): Entity ID of a climate device to copy current temperature and humidity from
+- `weather_entity` (optional): Entity ID of a weather device to copy outdoor temperature and humidity from
+
+**Examples:**
+
+Sync from your real thermostat and weather:
+```yaml
+service: virtual_ac.sync_from_entities
+target:
+  entity_id: climate.test_ac
+data:
+  climate_entity: climate.living_room_thermostat
+  weather_entity: weather.home
+```
+
+Sync only indoor conditions from another climate device:
+```yaml
+service: virtual_ac.sync_from_entities
+target:
+  entity_id: climate.test_ac
+data:
+  climate_entity: climate.bedroom_ac
+```
+
+Sync only outdoor conditions from weather:
+```yaml
+service: virtual_ac.sync_from_entities
+target:
+  entity_id: climate.test_ac
+data:
+  weather_entity: weather.openweathermap
+```
+
+**Usage Tips:**
+- The service reads `current_temperature` and `current_humidity` (or `humidity`) from climate entities
+- The service reads `temperature` and `humidity` from weather entities
+- Only provided entities are read - you can sync from just climate, just weather, or both
+- Values are updated immediately and will persist until changed by simulation or another service call
+- Perfect for initializing the Virtual AC to match your current real-world conditions
+- Can be called from automations, scripts, or the Developer Tools → Services
+- Useful for creating realistic test scenarios that match your actual environment
+
 ## State Attributes
 
 The integration exposes the following state attributes:
@@ -330,6 +378,8 @@ DEBUG custom_components.virtual_ac.climate - Update cycle [heat]: temp 22.00->22
 - **Via Terminal**: `tail -f ~/.homeassistant/home-assistant.log` (or your log location)
 - **Via SSH Add-on**: Use the SSH add-on terminal
 
+**For 500 errors and detailed debugging**, see [VIEWING_LOGS.md](VIEWING_LOGS.md) for comprehensive instructions on accessing Home Assistant logs.
+
 ## Troubleshooting
 
 ### Entity not appearing
@@ -349,6 +399,56 @@ DEBUG custom_components.virtual_ac.climate - Update cycle [heat]: temp 22.00->22
 - DRY mode has the most significant humidity change
 - COOL mode has slight humidity decrease
 - FAN_ONLY and OFF modes don't change humidity
+
+## Development
+
+### Setting Up Development Environment
+
+To set up a local development environment for testing and development:
+
+1. **Create a virtual environment:**
+   ```bash
+   ./setup_dev_env.sh
+   ```
+
+   Or manually:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements-dev.txt
+   ```
+
+2. **Test imports:**
+   ```bash
+   python3 test_imports.py
+   ```
+
+3. **Activate the virtual environment in future sessions:**
+   ```bash
+   source venv/bin/activate
+   ```
+
+### Testing
+
+The `test_imports.py` script validates that all modules can be imported correctly. This helps catch import errors and syntax issues before deploying to Home Assistant.
+
+### Project Structure
+
+```
+custom_components/virtual_ac/
+├── __init__.py          # Integration entry point
+├── manifest.json        # Integration metadata
+├── config_flow.py       # Configuration UI
+├── climate.py          # Main climate entity
+├── coordinator.py       # Data coordinator for state sharing
+├── sensor.py           # Sensor entities (temp/humidity)
+├── select.py           # Select entities (fan/swing)
+├── services.py         # Custom services
+├── services.yaml       # Service definitions
+├── strings.json        # UI translations
+└── const.py            # Constants and defaults
+```
 
 ## Support
 

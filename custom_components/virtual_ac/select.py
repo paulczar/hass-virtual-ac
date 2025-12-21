@@ -5,9 +5,10 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     DOMAIN,
@@ -65,22 +66,23 @@ class VirtualACBaseSelect(SelectEntity):
         await super().async_added_to_hass()
 
         # Listen for climate entity state changes
+        @callback
+        def _state_change_listener(event: Event) -> None:
+            """Handle state change event."""
+            if event.data.get("new_state"):
+                self._update_from_climate()
+                self.async_write_ha_state()
+
         self.async_on_remove(
-            self.hass.helpers.event.async_track_state_change(
-                self._climate_entity_id,
-                self._handle_state_change,
+            async_track_state_change_event(
+                self.hass,
+                [self._climate_entity_id],
+                _state_change_listener,
             )
         )
 
         # Get initial state
         self._update_from_climate()
-
-    @callback
-    def _handle_state_change(self, entity_id: str, old_state, new_state) -> None:
-        """Handle climate entity state changes."""
-        if new_state:
-            self._update_from_climate()
-            self.async_write_ha_state()
 
     @callback
     def _update_from_climate(self) -> None:

@@ -1,0 +1,75 @@
+# Services for Virtual AC integration
+# Services are registered programmatically in services.py
+# This file exists to prevent Home Assistant from looking for it
+
+set_state:
+  name: Set State
+  description: Set current temperature and/or humidity values for testing scenarios.
+  target:
+    entity:
+      domain: climate
+      integration: virtual_ac
+  fields:
+    current_temperature:
+      name: Current Temperature
+      description: Set the current indoor temperature
+      required: false
+      selector:
+        number:
+          min: -50
+          max: 50
+          step: 0.1
+          unit_of_measurement: "°C"
+    current_humidity:
+      name: Current Humidity
+      description: Set the current indoor humidity percentage
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: "%"
+    external_temperature:
+      name: External Temperature
+      description: Set the external/ambient temperature
+      required: false
+      selector:
+        number:
+          min: -50
+          max: 50
+          step: 0.1
+          unit_of_measurement: "°C"
+    external_humidity:
+      name: External Humidity
+      description: Set the external/ambient humidity percentage
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: "%"
+
+sync_from_entities:
+  name: Sync From Entities
+  description: Sync temperature and humidity from another climate entity and/or weather entity to match real conditions.
+  target:
+    entity:
+      domain: climate
+      integration: virtual_ac
+  fields:
+    climate_entity:
+      name: Climate Entity
+      description: Entity ID of a climate device to copy current temperature and humidity from (e.g., climate.living_room_thermostat)
+      required: false
+      selector:
+        entity:
+          domain: climate
+    weather_entity:
+      name: Weather Entity
+      description: Entity ID of a weather device to copy outdoor temperature and humidity from (e.g., weather.home)
+      required: false
+      selector:
+        entity:
+          domain: weather

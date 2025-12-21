@@ -72,27 +72,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Virtual AC climate platform."""
-    climate_entity = VirtualACClimate(hass, entry)
-    async_add_entities([climate_entity])
-
-    # Store reference to climate entity for service access
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    if entry.entry_id not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entry.entry_id] = {}
-    hass.data[DOMAIN][entry.entry_id]["climate_entity"] = climate_entity
+    async_add_entities([VirtualACClimate(hass, entry)])
 
 
 class VirtualACClimate(ClimateEntity, RestoreEntity):
     """Virtual Air Conditioner Climate Entity."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the Virtual AC climate entity."""
         self.hass = hass
         self._entry = entry
-        self._config = entry.data
+        # Options take precedence over data for backwards compatibility
+        self._config = {**(entry.data or {}), **(entry.options or {})}
 
         # Get coordinator for sharing state with sensors
         self._coordinator = None
@@ -109,10 +102,10 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             sw_version="1.0.0",
         )
 
-        # Unique ID
+        # Unique ID and Entity ID
         self._attr_unique_id = f"{entry.entry_id}_climate"
-        # Store desired entity_id - will be set via entity registry in async_added_to_hass
-        self._desired_entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
+        # Set entity_id directly - Home Assistant will use this if set before async_add_entities
+        self.entity_id = f"climate.{device_name.lower().replace(' ', '_')}"
 
         # HVAC modes
         self._attr_hvac_modes = [
@@ -189,25 +182,9 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
         """When entity is added to hass."""
         await super().async_added_to_hass()
 
-        # Set custom entity_id via entity registry if it differs
-        # Do this after super() so the entity is registered first
-        if hasattr(self, "_desired_entity_id"):
-            entity_registry = self.hass.helpers.entity_registry.async_get(self.hass)
-            # Get the current registry entry (might have different entity_id)
-            registry_entry = entity_registry.async_get(self.entity_id)
-            if registry_entry and registry_entry.entity_id != self._desired_entity_id:
-                try:
-                    # Update entity_id in registry to desired value
-                    entity_registry.async_update_entity(
-                        self.entity_id,
-                        new_entity_id=self._desired_entity_id,
-                    )
-                    # Update our internal reference
-                    self.entity_id = self._desired_entity_id
-                except Exception as e:
-                    _LOGGER.warning(
-                        "Could not update entity_id to %s: %s", self._desired_entity_id, e
-                    )
+        # Store reference to climate entity for service access (after entity is added)
+        if DOMAIN in self.hass.data and self._entry.entry_id in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN][self._entry.entry_id]["climate_entity"] = self
 
         # Get coordinator if not already set (fallback)
         if self._coordinator is None and DOMAIN in self.hass.data:
@@ -231,6 +208,7 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             self._coordinator.update_external_humidity(self._ambient_humidity)
 
         # Log initialization
+        device_name = self._entry.data.get(CONF_NAME, "Virtual AC")
         _LOGGER.debug(
             "Virtual AC initialized: name=%s, mode=%s, simulation_mode=%s, current_temp=%.2f°C, target_temp=%.2f°C, heating_rate=%.2f°C/min, cooling_rate=%.2f°C/min, update_interval=%ds",
             device_name,
@@ -384,11 +362,17 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
     async def _apply_instant_mode(self, hvac_mode: HVACMode) -> None:
         """Apply instant mode changes."""
         if hvac_mode == HVACMode.COOL:
-            self._attr_current_temperature = self._attr_target_temperature
+            # COOL mode: can only decrease temperature (or stay same if already at/below target)
+            if self._attr_current_temperature > self._attr_target_temperature:
+                self._attr_current_temperature = self._attr_target_temperature
+            # If current <= target, temperature stays the same (can't heat in COOL mode)
             # Slight humidity decrease
             self._attr_current_humidity = max(0, self._attr_current_humidity - 1.0)
         elif hvac_mode == HVACMode.HEAT:
-            self._attr_current_temperature = self._attr_target_temperature
+            # HEAT mode: can only increase temperature (or stay same if already at/above target)
+            if self._attr_current_temperature < self._attr_target_temperature:
+                self._attr_current_temperature = self._attr_target_temperature
+            # If current >= target, temperature stays the same (can't cool in HEAT mode)
             # Slight humidity decrease
             self._attr_current_humidity = max(0, self._attr_current_humidity - 0.5)
         elif hvac_mode == HVACMode.DRY:
@@ -408,8 +392,14 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             elif self._attr_current_temperature > self._attr_target_temperature:
                 self._attr_current_temperature = self._attr_target_temperature
         elif hvac_mode == HVACMode.OFF:
-            # Temperature drifts toward ambient
-            pass
+            # In instant mode, immediately set to ambient values
+            self._attr_current_temperature = self._ambient_temp
+            self._attr_current_humidity = self._ambient_humidity
+            _LOGGER.debug(
+                "Instant OFF mode: Set to ambient (temp: %.2f°C, humidity: %.2f%%)",
+                self._ambient_temp,
+                self._ambient_humidity,
+            )
 
         # Update coordinator
         if self._coordinator:
@@ -615,7 +605,8 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             _LOGGER.debug("Auto mode: Within tolerance (diff: %.2f°C), maintaining", temp_diff)
 
     async def _simulate_off(self, elapsed_minutes: float) -> None:
-        """Simulate off mode - drift toward ambient."""
+        """Simulate off mode - drift toward ambient temperature and humidity."""
+        # Temperature drift toward ambient
         if self._attr_current_temperature < self._ambient_temp:
             # Drift up toward ambient
             change = self._ambient_drift_rate * elapsed_minutes
@@ -624,7 +615,7 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
                 self._attr_current_temperature + change,
             )
             _LOGGER.debug(
-                "OFF mode: Drifting up %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
+                "OFF mode: Temperature drifting up %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
                 self._attr_current_temperature,
                 new_temp,
                 self._ambient_temp,
@@ -640,7 +631,7 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
                 self._attr_current_temperature - change,
             )
             _LOGGER.debug(
-                "OFF mode: Drifting down %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
+                "OFF mode: Temperature drifting down %.2f -> %.2f°C (ambient: %.2f°C, change: %.4f°C, rate: %.2f°C/min)",
                 self._attr_current_temperature,
                 new_temp,
                 self._ambient_temp,
@@ -650,8 +641,51 @@ class VirtualACClimate(ClimateEntity, RestoreEntity):
             self._attr_current_temperature = new_temp
         else:
             _LOGGER.debug(
-                "OFF mode: At ambient temperature (%.2f°C), no drift",
+                "OFF mode: At ambient temperature (%.2f°C), no temperature drift",
                 self._attr_current_temperature,
+            )
+
+        # Humidity drift toward ambient
+        # Use a humidity drift rate (percentage per minute) - similar to dry mode but slower
+        humidity_drift_rate = self._dry_humidity_rate * 0.3  # 30% of dry rate for natural drift
+        if self._attr_current_humidity < self._ambient_humidity:
+            # Drift up toward ambient
+            change = humidity_drift_rate * elapsed_minutes
+            new_humidity = min(
+                100.0,  # Cap at 100%
+                self._ambient_humidity,
+                self._attr_current_humidity + change,
+            )
+            _LOGGER.debug(
+                "OFF mode: Humidity drifting up %.2f -> %.2f%% (ambient: %.2f%%, change: %.4f%%, rate: %.2f%%/min)",
+                self._attr_current_humidity,
+                new_humidity,
+                self._ambient_humidity,
+                change,
+                humidity_drift_rate,
+            )
+            self._attr_current_humidity = new_humidity
+        elif self._attr_current_humidity > self._ambient_humidity:
+            # Drift down toward ambient
+            change = humidity_drift_rate * elapsed_minutes
+            new_humidity = max(
+                0.0,  # Cap at 0%
+                self._ambient_humidity,
+                self._attr_current_humidity - change,
+            )
+            _LOGGER.debug(
+                "OFF mode: Humidity drifting down %.2f -> %.2f%% (ambient: %.2f%%, change: %.4f%%, rate: %.2f%%/min)",
+                self._attr_current_humidity,
+                new_humidity,
+                self._ambient_humidity,
+                change,
+                humidity_drift_rate,
+            )
+            self._attr_current_humidity = new_humidity
+        else:
+            _LOGGER.debug(
+                "OFF mode: At ambient humidity (%.2f%%), no humidity drift",
+                self._attr_current_humidity,
             )
 
     @property

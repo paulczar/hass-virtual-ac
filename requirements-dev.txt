@@ -1,0 +1,9 @@
+# Development dependencies for testing the Virtual AC integration
+# Install with: pip install -r requirements-dev.txt
+
+# Core Home Assistant dependencies for testing
+homeassistant>=2025.12.4
+
+# Additional testing tools
+pytest>=7.0.0
+pytest-homeassistant-custom-component>=0.13.300

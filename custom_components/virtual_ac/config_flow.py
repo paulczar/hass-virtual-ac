@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.const import CONF_NAME
+
+_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     DOMAIN,
@@ -132,64 +135,89 @@ class VirtualACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> VirtualACOptionsFlowHandler:
         """Get the options flow for this handler."""
-        return VirtualACOptionsFlowHandler(config_entry)
+        try:
+            _LOGGER.debug("Creating options flow handler for entry: %s", config_entry.entry_id)
+            handler = VirtualACOptionsFlowHandler()
+            handler._config_entry = config_entry
+            _LOGGER.debug("Options flow handler created successfully")
+            return handler
+        except Exception as e:
+            _LOGGER.error("Error creating options flow handler: %s", e, exc_info=True)
+            raise
 
 
 class VirtualACOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Virtual AC."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict | None = None
     ) -> FlowResult:
         """Manage the options."""
-        if user_input is not None:
-            # Update config entry with new options
-            return self.async_create_entry(title="", data=user_input)
+        try:
+            _LOGGER.debug("Options flow init step called, user_input: %s", user_input is not None)
 
-        # Pre-fill with current values
-        options_schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_SIMULATION_MODE,
-                    default=self.config_entry.data.get(
-                        CONF_SIMULATION_MODE, DEFAULT_SIMULATION_MODE
-                    ),
-                ): vol.In([SIMULATION_MODE_INSTANT, SIMULATION_MODE_REALISTIC]),
-                vol.Optional(
-                    CONF_COOLING_RATE,
-                    default=self.config_entry.data.get(
-                        CONF_COOLING_RATE, DEFAULT_COOLING_RATE
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_HEATING_RATE,
-                    default=self.config_entry.data.get(
-                        CONF_HEATING_RATE, DEFAULT_HEATING_RATE
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_DRY_HUMIDITY_RATE,
-                    default=self.config_entry.data.get(
-                        CONF_DRY_HUMIDITY_RATE, DEFAULT_DRY_HUMIDITY_RATE
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_AMBIENT_DRIFT_RATE,
-                    default=self.config_entry.data.get(
-                        CONF_AMBIENT_DRIFT_RATE, DEFAULT_AMBIENT_DRIFT_RATE
-                    ),
-                ): vol.Coerce(float),
-                vol.Optional(
-                    CONF_UPDATE_INTERVAL,
-                    default=self.config_entry.data.get(
-                        CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
-                    ),
-                ): vol.Coerce(int),
-            }
-        )
+            if user_input is not None:
+                # Update config entry with new options
+                # Options are stored separately from data
+                _LOGGER.debug("Saving options: %s", user_input)
+                return self.async_create_entry(title="", data=user_input)
 
-        return self.async_show_form(step_id="init", data_schema=options_schema)
+            # Get config entry from stored reference
+            config_entry = getattr(self, '_config_entry', None)
+            _LOGGER.debug("Config entry retrieved: %s", config_entry is not None)
+
+            if config_entry:
+                _LOGGER.debug("Config entry ID: %s", config_entry.entry_id)
+
+            # Pre-fill with current values from options or data
+            # Options take precedence, fall back to data for backwards compatibility
+            config_data = {}
+            config_options = {}
+
+            if config_entry:
+                try:
+                    config_data = config_entry.data or {}
+                    config_options = config_entry.options or {}
+                    _LOGGER.debug("Config data: %s, Config options: %s", config_data, config_options)
+                except Exception as e:
+                    _LOGGER.error("Error accessing config_entry data/options: %s", e, exc_info=True)
+                    raise
+
+            # Merge options and data (options override data)
+            current_config = {**config_data, **config_options}
+            _LOGGER.debug("Merged config: %s", current_config)
+
+            options_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_SIMULATION_MODE,
+                        default=current_config.get(CONF_SIMULATION_MODE, DEFAULT_SIMULATION_MODE),
+                    ): vol.In([SIMULATION_MODE_INSTANT, SIMULATION_MODE_REALISTIC]),
+                    vol.Optional(
+                        CONF_COOLING_RATE,
+                        default=current_config.get(CONF_COOLING_RATE, DEFAULT_COOLING_RATE),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        CONF_HEATING_RATE,
+                        default=current_config.get(CONF_HEATING_RATE, DEFAULT_HEATING_RATE),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        CONF_DRY_HUMIDITY_RATE,
+                        default=current_config.get(CONF_DRY_HUMIDITY_RATE, DEFAULT_DRY_HUMIDITY_RATE),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        CONF_AMBIENT_DRIFT_RATE,
+                        default=current_config.get(CONF_AMBIENT_DRIFT_RATE, DEFAULT_AMBIENT_DRIFT_RATE),
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        CONF_UPDATE_INTERVAL,
+                        default=current_config.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+                    ): vol.Coerce(int),
+                }
+            )
+
+            _LOGGER.debug("Options schema created successfully")
+            return self.async_show_form(step_id="init", data_schema=options_schema)
+        except Exception as e:
+            _LOGGER.error("Error in options flow init step: %s", e, exc_info=True)
+            raise

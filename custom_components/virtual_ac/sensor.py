@@ -125,6 +125,7 @@ class VirtualACIndoorHumiditySensor(VirtualACBaseSensor):
     _attr_device_class = SensorDeviceClass.HUMIDITY
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
 
     def __init__(
         self,
@@ -145,7 +146,10 @@ class VirtualACIndoorHumiditySensor(VirtualACBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return the current indoor humidity."""
-        return self.coordinator.current_humidity
+        humidity = self.coordinator.current_humidity
+        if humidity is not None:
+            return round(humidity, 1)
+        return None
 
 
 class VirtualACOutdoorTemperatureSensor(VirtualACBaseSensor):
@@ -183,6 +187,7 @@ class VirtualACOutdoorHumiditySensor(VirtualACBaseSensor):
     _attr_device_class = SensorDeviceClass.HUMIDITY
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
 
     def __init__(
         self,
@@ -203,4 +208,7 @@ class VirtualACOutdoorHumiditySensor(VirtualACBaseSensor):
     @property
     def native_value(self) -> float | None:
         """Return the current outdoor humidity."""
-        return self.coordinator.external_humidity
+        humidity = self.coordinator.external_humidity
+        if humidity is not None:
+            return round(humidity, 1)
+        return None
